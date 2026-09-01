@@ -7,7 +7,7 @@
  * background-only gate pass — shows a desktop notification. Also registers the
  * settings section and the locale dictionaries. No harness allowlist is touched.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
 /** Required services: the session list, slots, and locale. */
 export declare const inject: string[];
 /**

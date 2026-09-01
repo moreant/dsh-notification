@@ -30,6 +30,14 @@ export interface NotificationProjectionValue {
   readonly tools: readonly string[]
 }
 
+/** Persistable Host fold state for the notification projection. */
+export interface NotificationProjectionState {
+  /** The open turn's text and tool names; null outside a turn. */
+  readonly openTurn: { readonly turn: number; readonly text: string; readonly tools: string[] } | null
+  /** The last completed turn's summary; null before the first completion. */
+  readonly last: NotificationProjectionValue | null
+}
+
 /** One include/exclude keyword rule over a turn's title, reply text, and tool names. */
 export interface NotificationRule {
   /** Stable opaque id minted at creation and unchanged across edits. */
@@ -73,5 +81,9 @@ export interface NotificationSettings {
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     notification: NotificationProjectionValue
+  }
+
+  interface SessionProjectionStateMap {
+    notification: NotificationProjectionState
   }
 }

@@ -9,16 +9,10 @@
 import { z } from 'zod'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { NotificationProjectionValue } from './contract.ts'
+import type { NotificationProjectionState, NotificationProjectionValue } from './contract.ts'
 import type { ResolvedConfig } from './types.ts'
 
-/** Accumulated turn in progress plus the last finalized completion. */
-export interface NotificationProjectionState {
-  /** The open turn's text and tool names; null outside a turn. */
-  readonly openTurn: { readonly turn: number; readonly text: string; readonly tools: string[] } | null
-  /** The last completed turn's summary; null before the first completion. */
-  readonly last: NotificationProjectionValue | null
-}
+export type { NotificationProjectionState } from './contract.ts'
 
 /** The empty-log view (no completed turn yet). */
 export const EMPTY_PROJECTION: NotificationProjectionValue = Object.freeze({
@@ -96,18 +90,32 @@ export function applyProjectionEvent(
  * @param config - resolved plugin configuration (body budget).
  * @returns the projection definition registered on the projection seam.
  */
-export function notificationProjection(config: ResolvedConfig): ProjectionDefinition<'notification', NotificationProjectionState> {
+export function notificationProjection(config: ResolvedConfig):
+Omit<ProjectionDefinition<'notification', NotificationProjectionState>, 'wire'> & {
+  wire: NonNullable<ProjectionDefinition<'notification', NotificationProjectionState>['wire']>
+} {
+  const viewSchema = z.object({
+    turn: z.number().int().nonnegative(),
+    reason: z.string(),
+    body: z.string(),
+    tools: z.array(z.string()),
+  }).strict()
   return {
     key: 'notification',
-    schema: z.object({
-      turn: z.number().int().nonnegative(),
-      reason: z.string(),
-      body: z.string(),
-      tools: z.array(z.string()),
+    stateSchema: z.object({
+      openTurn: z.object({
+        turn: z.number().int().nonnegative(),
+        text: z.string(),
+        tools: z.array(z.string()),
+      }).strict().nullable(),
+      last: viewSchema.nullable(),
     }).strict(),
     init: () => ({ openTurn: null, last: null }),
     apply: (state, event) => applyProjectionEvent(state, event, config.maxBodyChars),
-    view: state => state.last ?? EMPTY_PROJECTION,
+    wire: {
+      viewSchema,
+      view: state => state.last ?? EMPTY_PROJECTION,
+    },
     stateVersion: 1,
   }
 }

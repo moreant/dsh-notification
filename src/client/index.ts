@@ -7,7 +7,8 @@
  * background-only gate pass — shows a desktop notification. Also registers the
  * settings section and the locale dictionaries. No harness allowlist is touched.
  */
-import type { ClientContext, SessionListState, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SnapshotStore } from './snapshot-store.ts'
 // Type-only: the ctx.locale Context merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the settings.section SlotMap entry.
@@ -33,10 +34,48 @@ export const inject = ['sessions', 'slots', 'locale']
 
 /** The slice of the sessions service this plugin reads. */
 interface SessionsListFace {
-  readonly list: { getSnapshot(): SessionListState; subscribe(listener: () => void): () => void }
+  readonly list: { getSnapshot(): NotificationSessionListState; subscribe(listener: () => void): () => void }
 }
 
-type SessionId = SessionListState['ids'][number]
+type SessionId = string
+
+/** Session list row fields shared by the 0.1.1 Runtime and 0.1.2 Controller. */
+interface NotificationSessionSummary {
+  readonly id: SessionId
+  readonly origin?: string
+  readonly title?: string
+  readonly displayTitle?: string
+  /** 0.1.1 carries pending status on the row itself. */
+  readonly pendingInteraction?: PendingKind
+  readonly projectionValues?: {
+    readonly notification?: import('../contract.ts').NotificationProjectionValue
+  }
+}
+
+/** Minimal list snapshot consumed by the notification runners. */
+interface NotificationSessionListState {
+  readonly ids: readonly SessionId[]
+  readonly byId: Readonly<Record<SessionId, NotificationSessionSummary>>
+  readonly current: SessionId | undefined
+}
+
+/** 0.1.2's separate pending-interaction observable. */
+interface UiSessionFace {
+  readonly pendingInteractions: {
+    getSnapshot(): ReadonlyMap<SessionId, { readonly kind: string }>
+    subscribe(listener: () => void): () => void
+  }
+}
+
+/** Slot registry surface common to the pre- and post-0.1.2 client assemblies. */
+interface SlotsFace {
+  inject(name: string, factory: () => unknown): unknown
+  register(entry: object, component: unknown): unknown
+}
+
+function asPendingKind(value: string | undefined): PendingKind | undefined {
+  return value === 'approval' || value === 'question' || value === 'plan-review' ? value : undefined
+}
 
 /**
  * Compose the notification surface.
@@ -53,6 +92,8 @@ export function apply(ctx: ClientContext): void {
   // different `sessions` Context member, and the two collide in this
   // single-program build.
   const sessions = ctx.get('sessions') as unknown as SessionsListFace
+  const uiSession = ctx.get('uiSession') as unknown as UiSessionFace | undefined
+  const slots = (ctx as unknown as { slots: SlotsFace }).slots
   const settings: SnapshotStore<NotificationSettings> = createNotificationSettingsStore()
   const set = (patch: Partial<NotificationSettings>): void => {
     settings.update(draft => { Object.assign(draft, patch) })
@@ -95,6 +136,7 @@ export function apply(ctx: ClientContext): void {
       const current = settings.getSnapshot()
       for (const id of state.ids) {
         const summary = state.byId[id]
+        if (summary === undefined) continue
         const projection = summary.projectionValues?.notification
         const { nextTurn, fresh } = projectionAdvance(observedTurn.get(id), projection)
         observedTurn.set(id, nextTurn)
@@ -135,9 +177,12 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     const observed = new Map<SessionId, { kind: PendingKind | undefined }>()
     const sequences = new Map<SessionId, number>()
-    const seed = (state: SessionListState): void => {
+    const pendingKind = (state: NotificationSessionListState, id: SessionId): PendingKind | undefined =>
+      state.byId[id]?.pendingInteraction
+      ?? asPendingKind(uiSession?.pendingInteractions.getSnapshot().get(id)?.kind)
+    const seed = (state: NotificationSessionListState): void => {
       const live = new Set(state.ids)
-      for (const id of state.ids) observed.set(id, { kind: state.byId[id].pendingInteraction })
+      for (const id of state.ids) observed.set(id, { kind: pendingKind(state, id) })
       for (const id of [...observed.keys()]) {
         if (!live.has(id)) {
           observed.delete(id)
@@ -151,12 +196,13 @@ export function apply(ctx: ClientContext): void {
       seed(sessions.list.getSnapshot())
     }
     const stopReset = ctx.on('connection/reset', reseed)
-    const off = sessions.list.subscribe(() => {
+    const run = (): void => {
       const state = sessions.list.getSnapshot()
       const current = settings.getSnapshot()
       for (const id of state.ids) {
         const summary = state.byId[id]
-        const kind: PendingKind | undefined = summary.pendingInteraction
+        if (summary === undefined) continue
+        const kind = pendingKind(state, id)
         const previous = observed.get(id)
         const next = pendingAdvance(previous, kind)
         observed.set(id, { kind: next.kind })
@@ -184,12 +230,14 @@ export function apply(ctx: ClientContext): void {
         }
       }
       seed(state)
-    })
-    return () => { off(); stopReset() }
+    }
+    const off = sessions.list.subscribe(run)
+    const offPending = uiSession?.pendingInteractions.subscribe(run)
+    return () => { off(); offPending?.(); stopReset() }
   }, 'dsh-notification: pending runner')
 
   // The settings section: master switch, permission card, outcome toggles, rules, advanced.
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
+  slots.inject('settings.section', () => slots.register({
     name: 'settings.section',
     id: 'notification',
     order: 60,

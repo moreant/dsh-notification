@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { PropsLocale, PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from './snapshot-store.ts'
 import type { NotificationRule, NotificationSettings } from '../contract.ts'
 import type { NotificationKey } from './locales.ts'
 import { notificationsApi, type NotificationCreationResult } from './notifier.ts'

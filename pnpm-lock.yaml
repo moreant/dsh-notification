@@ -18,9 +18,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: link:../dsh/packages/client/locale
         version: link:../dsh/packages/client/locale
-      '@deepseek-ai/dsh-client-runtime':
-        specifier: link:../dsh/packages/client/runtime
-        version: link:../dsh/packages/client/runtime
+      '@deepseek-ai/dsh-client-store':
+        specifier: link:../dsh/packages/client/store
+        version: link:../dsh/packages/client/store
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: link:../dsh/packages/client/ui-settings
         version: link:../dsh/packages/client/ui-settings

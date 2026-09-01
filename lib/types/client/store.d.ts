@@ -3,7 +3,7 @@
  * persistence) shared between the settings section and the completion runner.
  * The host knows nothing of these preferences — the client owns them.
  */
-import { type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
+import { type SnapshotStore } from './snapshot-store.ts';
 import type { NotificationSettings } from '../contract.ts';
 /** The out-of-the-box preferences. */
 export declare function defaultNotificationSettings(): NotificationSettings;

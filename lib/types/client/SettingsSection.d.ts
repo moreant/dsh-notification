@@ -1,5 +1,5 @@
 import type { PropsLocale, PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots';
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
+import type { SnapshotStore } from './snapshot-store.ts';
 import type { NotificationSettings } from '../contract.ts';
 import { type NotificationCreationResult } from './notifier.ts';
 /** Injected business face: the live settings store (bound to `useSettings`), the write verb, and the permission/test verbs. */
