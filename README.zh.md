@@ -14,12 +14,14 @@ client: 会话列表完成提醒（实时、去重）+ 持久化设置
 ## 安装
 
 ```sh
-dsh plugin --profile web add https://github.com/omdsh-dev/dsh-notification/archive/refs/tags/v0.1.4.tar.gz
+dsh plugin --profile web add https://github.com/moreant/dsh-notification/archive/refs/tags/v0.1.5.tar.gz
 ```
 
 随后重启 web 服务以加载 host 半部分与新的 client bundle。默认的 `dsh web` profile 已包含所需 client 组合（会话列表、设置外壳、locale）。
 
-`0.1.4` 同时兼容 Harness 0.1.1 与 0.1.2 的客户端包结构和投影契约。
+`0.1.5` 同时兼容 Harness 0.1.x 与 0.2.x 的客户端结构和投影契约：等待用户处理的交互在 0.2.x 上取自 `uiSession.sessionStatus`（回退到 0.1.2 的 `pendingInteractions` 可观察对象与 0.1.1 的列表行字段），「仅在不在视野内时提醒」的门控在 0.1.x 用列表快照的 `current`，在 0.2.x 用行上的 `retainedBy.mainView` 保留计数。
+
+只有在 npm 上拥有该包名时才可按名称安装：npm 上的 `dsh-notification` 属于另一个不相关的项目，按名称安装会装到它，而不是本插件——请使用上面的 tarball 地址。
 
 设置段位于 **设置 > 通知**。
 

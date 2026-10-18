@@ -14,12 +14,14 @@ client: session list completion reminder (live, dedup) + persisted settings
 ## Install
 
 ```sh
-dsh plugin --profile web add https://github.com/omdsh-dev/dsh-notification/archive/refs/tags/v0.1.4.tar.gz
+dsh plugin --profile web add https://github.com/moreant/dsh-notification/archive/refs/tags/v0.1.5.tar.gz
 ```
 
 Restart the web server so the host half and the served client bundle pick up the plugin. The default `dsh web` profile has the required client composition (the session list, the settings shell, and locale).
 
-Version `0.1.4` supports both the 0.1.1 and 0.1.2 Harness client package layouts and projection contracts.
+Version `0.1.5` supports both the 0.1.x and 0.2.x Harness client layouts and projection contracts: waiting interactions are read from `uiSession.sessionStatus` on 0.2.x (falling back to the 0.1.2 `pendingInteractions` observable and the 0.1.1 list row), and the "in view" gate uses the list snapshot's `current` on 0.1.x or the row's `retainedBy.mainView` retention on 0.2.x.
+
+Install by name only if this package owns that registry name. The `dsh-notification` name on npm belongs to an unrelated project, so installing `dsh-notification` from a registry installs that one instead — use the tarball URL above.
 
 The settings section lives under **Settings > Notifications**.
 
