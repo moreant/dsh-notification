@@ -19,6 +19,7 @@ import { NS, en, zh } from './locales.ts'
 import { adoptStyles } from './styles.ts'
 import { createNotificationSettingsStore } from './store.ts'
 import { notificationFor, pendingAdvance, pendingNotificationFor, projectionAdvance } from './runner.ts'
+import { pendingKindOf, viewedSession, type SessionListFacts, type SessionRowFacts, type UiSessionFacts } from './session-facts.ts'
 import {
   bodyText,
   createBrowserNotification,
@@ -39,42 +40,58 @@ interface SessionsListFace {
 
 type SessionId = string
 
-/** Session list row fields shared by the 0.1.1 Runtime and 0.1.2 Controller. */
-interface NotificationSessionSummary {
+/** Session list row fields shared by the 0.1.x Runtime and the 0.2.x Controller. */
+interface NotificationSessionSummary extends SessionRowFacts {
   readonly id: SessionId
   readonly origin?: string
   readonly title?: string
   readonly displayTitle?: string
-  /** 0.1.1 carries pending status on the row itself. */
-  readonly pendingInteraction?: PendingKind
   readonly projectionValues?: {
     readonly notification?: import('../contract.ts').NotificationProjectionValue
   }
 }
 
-/** Minimal list snapshot consumed by the notification runners. */
-interface NotificationSessionListState {
-  readonly ids: readonly SessionId[]
-  readonly byId: Readonly<Record<SessionId, NotificationSessionSummary>>
-  readonly current: SessionId | undefined
+/** One session's host-pushed projection values in the 0.2.x list snapshot. */
+interface NotificationProjectionsBySession {
+  readonly values?: {
+    readonly notification?: import('../contract.ts').NotificationProjectionValue
+  }
 }
 
-/** 0.1.2's separate pending-interaction observable. */
-interface UiSessionFace {
-  readonly pendingInteractions: {
-    getSnapshot(): ReadonlyMap<SessionId, { readonly kind: string }>
-    subscribe(listener: () => void): () => void
-  }
+/** Minimal list snapshot consumed by the notification runners. */
+interface NotificationSessionListState extends SessionListFacts {
+  readonly ids: readonly SessionId[]
+  readonly byId: Readonly<Record<SessionId, NotificationSessionSummary>>
+  /** 0.2.x: every resident session's projection values, keyed by session. */
+  readonly projectionsBySession?: Readonly<Record<SessionId, NotificationProjectionsBySession>>
+}
+
+/** One session's aggregate status row published by `uiSession.sessionStatus` (0.2.x). */
+interface NotificationSessionStatus {
+  readonly running?: boolean
+  /** The business-owned interaction currently waiting for the user. */
+  readonly pendingInteraction?: { readonly kind?: string }
+  readonly completionUnread?: boolean
+}
+
+/** The observable pair every session-status shape this plugin reads provides. */
+interface SessionObservable<T> {
+  getSnapshot(): T
+  subscribe(listener: () => void): () => void
+}
+
+/** The Session UI service: pending-interaction facts, in either runtime layout. */
+interface UiSessionFace extends UiSessionFacts {
+  /** 0.2.x: one observable over running/pending/completion facts per session. */
+  readonly sessionStatus?: SessionObservable<ReadonlyMap<SessionId, NotificationSessionStatus>>
+  /** 0.1.2: a separate pending-interaction observable. */
+  readonly pendingInteractions?: SessionObservable<ReadonlyMap<SessionId, { readonly kind: string }>>
 }
 
 /** Slot registry surface common to the pre- and post-0.1.2 client assemblies. */
 interface SlotsFace {
   inject(name: string, factory: () => unknown): unknown
   register(entry: object, component: unknown): unknown
-}
-
-function asPendingKind(value: string | undefined): PendingKind | undefined {
-  return value === 'approval' || value === 'question' || value === 'plan-review' ? value : undefined
 }
 
 /**
@@ -138,6 +155,7 @@ export function apply(ctx: ClientContext): void {
         const summary = state.byId[id]
         if (summary === undefined) continue
         const projection = summary.projectionValues?.notification
+          ?? state.projectionsBySession?.[id]?.values?.notification
         const { nextTurn, fresh } = projectionAdvance(observedTurn.get(id), projection)
         observedTurn.set(id, nextTurn)
         if (!fresh) continue
@@ -147,11 +165,12 @@ export function apply(ctx: ClientContext): void {
           continue
         }
         const permission = notificationsApi()?.permission ?? 'denied'
-        const showIt = shouldShow(permission, current.backgroundOnly, document.hidden, id, state.current)
+        const viewed = viewedSession(state, id)
+        const showIt = shouldShow(permission, current.backgroundOnly, document.hidden, id, viewed)
         console.info(
           `[dsh-notification] turn ${nextTurn} ${id}: reason=${plan.reason} show=${showIt}`
           + ` (permission=${permission} backgroundOnly=${current.backgroundOnly}`
-          + ` hidden=${document.hidden} current=${String(state.current)})`,
+          + ` hidden=${document.hidden} viewed=${String(viewed)})`,
         )
         if (showIt) {
           show(
@@ -178,8 +197,7 @@ export function apply(ctx: ClientContext): void {
     const observed = new Map<SessionId, { kind: PendingKind | undefined }>()
     const sequences = new Map<SessionId, number>()
     const pendingKind = (state: NotificationSessionListState, id: SessionId): PendingKind | undefined =>
-      state.byId[id]?.pendingInteraction
-      ?? asPendingKind(uiSession?.pendingInteractions.getSnapshot().get(id)?.kind)
+      pendingKindOf(state, uiSession, id)
     const seed = (state: NotificationSessionListState): void => {
       const live = new Set(state.ids)
       for (const id of state.ids) observed.set(id, { kind: pendingKind(state, id) })
@@ -219,7 +237,7 @@ export function apply(ctx: ClientContext): void {
         )
         if (plan === null) continue
         const permission = notificationsApi()?.permission ?? 'denied'
-        const showIt = shouldShow(permission, current.backgroundOnly, document.hidden, id, state.current)
+        const showIt = shouldShow(permission, current.backgroundOnly, document.hidden, id, viewedSession(state, id))
         if (showIt) {
           show(
             t(pendingTitleKey(plan.kind)),
@@ -231,9 +249,12 @@ export function apply(ctx: ClientContext): void {
       }
       seed(state)
     }
+    // 0.2.x publishes waits through `sessionStatus`; 0.1.2 through
+    // `pendingInteractions`. Subscribe to whichever this runtime offers.
     const off = sessions.list.subscribe(run)
-    const offPending = uiSession?.pendingInteractions.subscribe(run)
-    return () => { off(); offPending?.(); stopReset() }
+    const offStatus = uiSession?.sessionStatus?.subscribe(run)
+    const offPending = uiSession?.pendingInteractions?.subscribe(run)
+    return () => { off(); offStatus?.(); offPending?.(); stopReset() }
   }, 'dsh-notification: pending runner')
 
   // The settings section: master switch, permission card, outcome toggles, rules, advanced.
