@@ -5,7 +5,15 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { NotificationSettings } from '../src/contract.ts'
-import { notificationFor, pendingAdvance, pendingNotificationFor, projectionAdvance } from '../src/client/runner.ts'
+import { COMPLETION_TAG } from '../src/client/notifier.ts'
+import {
+  notificationFor,
+  pendingAdvance,
+  pendingNotificationFor,
+  projectionAdvance,
+  staleAll,
+  staleExceptNewestCompletion,
+} from '../src/client/runner.ts'
 
 function settings(overrides: Partial<NotificationSettings> = {}): NotificationSettings {
   return {
@@ -21,6 +29,7 @@ function settings(overrides: Partial<NotificationSettings> = {}): NotificationSe
     rules: [],
     requireInteraction: false,
     backgroundOnly: true,
+    clearOnLock: true,
     ...overrides,
   }
 }
@@ -33,12 +42,12 @@ describe('notificationFor', () => {
 
   it('uses the projection reason and body when present', () => {
     const plan = notificationFor('s1', undefined, 'Deploy', { turn: 3, reason: 'error', body: 'boom', tools: ['bash'] }, settings())
-    expect(plan).toEqual({ reason: 'error', body: 'boom', tag: 'dsh-notification-s1-3' })
+    expect(plan).toEqual({ reason: 'error', body: 'boom', tag: COMPLETION_TAG })
   })
 
   it('falls back to a generic completion when the projection has not landed', () => {
     const plan = notificationFor('s1', undefined, 'Deploy the app', undefined, settings())
-    expect(plan).toEqual({ reason: 'completed', body: 'Deploy the app', tag: 'dsh-notification-s1-0' })
+    expect(plan).toEqual({ reason: 'completed', body: 'Deploy the app', tag: COMPLETION_TAG })
   })
 
   it('skips unknown projection reasons', () => {
@@ -106,5 +115,37 @@ describe('projectionAdvance', () => {
   it('treats an absent projection as turn 0', () => {
     expect(projectionAdvance(undefined, undefined)).toEqual({ nextTurn: 0, fresh: false })
     expect(projectionAdvance(0, { turn: 1, reason: 'completed', body: 'first', tools: [] })).toEqual({ nextTurn: 1, fresh: true })
+  })
+})
+
+describe('staleAll', () => {
+  it('returns every recorded entry with its recovered tag', () => {
+    expect(staleAll(['dsh-notification-completion#2', 'dsh-notification-pending-s1-1#3'])).toEqual([
+      { id: 'dsh-notification-completion#2', tag: 'dsh-notification-completion' },
+      { id: 'dsh-notification-pending-s1-1#3', tag: 'dsh-notification-pending-s1-1' },
+    ])
+  })
+
+  it('skips ids that carry no tag', () => {
+    expect(staleAll(['broken'])).toEqual([])
+  })
+})
+
+describe('staleExceptNewestCompletion', () => {
+  it('keeps the newest completion so waking to the finished task still shows it', () => {
+    const live = ['dsh-notification-completion#1', 'dsh-notification-pending-s1-1#2', 'dsh-notification-completion#3']
+    expect(staleExceptNewestCompletion(live).map(entry => entry.id)).toEqual([
+      'dsh-notification-completion#1',
+      'dsh-notification-pending-s1-1#2',
+    ])
+  })
+
+  it('withdraws pending interactions even when no completion survives', () => {
+    const live = ['dsh-notification-pending-s1-1#1', 'dsh-notification-pending-s1-2#2']
+    expect(staleExceptNewestCompletion(live)).toHaveLength(2)
+  })
+
+  it('has nothing to withdraw for an empty ledger', () => {
+    expect(staleExceptNewestCompletion([])).toEqual([])
   })
 })

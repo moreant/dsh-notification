@@ -4,11 +4,15 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  COMPLETION_TAG,
   bodyText,
+  closeNotifications,
   createBrowserNotification,
-  notificationTag,
+  idTag,
+  notificationId,
   pendingNotificationTag,
   pendingTitleKey,
+  restoreNotification,
   shouldShow,
   titleKey,
 } from '../src/client/notifier.ts'
@@ -52,9 +56,68 @@ describe('shouldShow', () => {
   })
 })
 
-describe('notificationTag', () => {
-  it('namespaces the tag per session and turn', () => {
-    expect(notificationTag('session-1', 3)).toBe('dsh-notification-session-1-3')
+describe('COMPLETION_TAG', () => {
+  it('is one slot shared by every completion so entries replace instead of stacking', () => {
+    expect(COMPLETION_TAG).toBe('dsh-notification-completion')
+  })
+})
+
+describe('notificationId / idTag', () => {
+  it('round-trips a tag that itself contains no separator', () => {
+    const id = notificationId(COMPLETION_TAG, 7)
+    expect(id).toBe('dsh-notification-completion#7')
+    expect(idTag(id)).toBe(COMPLETION_TAG)
+  })
+
+  it('keeps a per-interaction tag intact', () => {
+    const id = notificationId('dsh-notification-pending-s1-2', 3)
+    expect(idTag(id)).toBe('dsh-notification-pending-s1-2')
+  })
+
+  it('rejects ids without a tag', () => {
+    expect(idTag('alpha')).toBeUndefined()
+    expect(idTag('#1')).toBeUndefined()
+  })
+})
+
+describe('restoreNotification', () => {
+  it('re-points the entry through its tag', () => {
+    const constructed: Array<{ title: string; options: NotificationOptions | undefined }> = []
+    const api = class {
+      static permission = 'granted'
+      constructor(title: string, options?: NotificationOptions) { constructed.push({ title, options }) }
+    } as unknown as typeof Notification
+    expect(restoreNotification(api, 'dsh-notification-completion#4')).toBeDefined()
+    expect(constructed).toEqual([{ title: '', options: { tag: 'dsh-notification-completion' } }])
+  })
+
+  it('returns undefined without an API, a tag, or a working constructor', () => {
+    expect(restoreNotification(undefined, 'x#1')).toBeUndefined()
+    expect(restoreNotification(class {} as unknown as typeof Notification, 'notag')).toBeUndefined()
+    const broken = class { constructor() { throw new Error('unavailable') } } as unknown as typeof Notification
+    expect(restoreNotification(broken, 'x#1')).toBeUndefined()
+  })
+})
+
+describe('closeNotifications', () => {
+  it('closes every recorded handle and counts successes', () => {
+    const closed: string[] = []
+    const api = class {
+      static permission = 'granted'
+      private readonly tag: string | undefined
+      constructor(_title: string, options?: NotificationOptions) { this.tag = options?.tag }
+      close(): void {
+        if (this.tag === 'refuse') throw new Error('cannot close')
+        closed.push(this.tag ?? '')
+      }
+    } as unknown as typeof Notification
+    const count = closeNotifications(api, ['a#1', 'refuse#1', 'b#1', 'no-tag'])
+    expect(count).toBe(2)
+    expect(closed).toEqual(['a', 'b'])
+  })
+
+  it('is a no-op without an API', () => {
+    expect(closeNotifications(undefined, ['a#1'])).toBe(0)
   })
 })
 

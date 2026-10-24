@@ -24,6 +24,7 @@ function settings(overrides: Partial<NotificationSettings> = {}): NotificationSe
     rules: [],
     requireInteraction: false,
     backgroundOnly: true,
+    clearOnLock: true,
     ...overrides,
   }
 }

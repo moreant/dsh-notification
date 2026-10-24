@@ -49,19 +49,83 @@ export function shouldShow(
 }
 
 /**
- * The grouping tag: one notification slot per session per turn. Turn-scoped
- * (not session-scoped): the browser replaces same-tag notifications, and a
- * stale same-tag entry lingering in the Windows notification center silently
- * swallows every later notification with that tag — a per-turn tag guarantees
- * each completed turn's toast always shows.
+ * The tag: one notification slot shared by every completion, because the user
+ * reads "the task finished", not a timeline. Reusing the tag makes the browser
+ * replace the previous completion instead of stacking a second entry in
+ * Notification Center — the stacking is what turns one wake-up into a batch of
+ * stale toasts. Pending interactions keep their own per-interaction tags: each
+ * one waits for a different answer and must stay visible.
  */
-export function notificationTag(sessionId: string, turn: number): string {
-  return `dsh-notification-${sessionId}-${turn}`
+export const COMPLETION_TAG = 'dsh-notification-completion'
+
+/**
+ * The stable id one constructed notification is tracked under (the ledger key).
+ * The browser does not expose the id of a `new Notification()`, so the plugin
+ * assigns one per creation and renders a fresh handle from it when withdrawing.
+ * @param tag - the notification tag it was shown with.
+ * @param sequence - a per-page monotonically increasing counter.
+ */
+export function notificationId(tag: string, sequence: number): string {
+  return `${tag}#${sequence}`
+}
+
+/**
+ * Split a ledger id back into the tag it was shown with.
+ * @param id - a ledger id from {@link notificationId}.
+ * @returns the tag, or undefined when the id carries none.
+ */
+export function idTag(id: string): string | undefined {
+  const at = id.lastIndexOf('#')
+  if (at <= 0) return undefined
+  return id.slice(0, at)
 }
 
 /** A unique tag for each pending interaction notification in one session. */
 export function pendingNotificationTag(sessionId: string, sequence: number): string {
   return `dsh-notification-pending-${sessionId}-${sequence}`
+}
+
+/**
+ * Render a handle for an id recorded by this page or a previous one.
+ *
+ * The web API has no "restore by id": a notification is identified by its
+ * tag, and constructing one with the same tag re-points the plugin at the live
+ * entry, whose `close()` then withdraws it. The constructor is only borrowed
+ * as that handle — it is not meant to be shown by the caller.
+ * @param api - the browser notification surface.
+ * @param id - the ledger id to re-point.
+ * @returns the handle, or undefined when the id or the API is unusable.
+ */
+export function restoreNotification(api: typeof Notification | undefined, id: string): Notification | undefined {
+  const tag = idTag(id)
+  if (api === undefined || tag === undefined) return undefined
+  try {
+    return new api('', { tag })
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Withdraw every recorded notification that may still sit in Notification
+ * Center. One failing close must not stop the rest.
+ * @param api - the browser notification surface.
+ * @param ids - the ledger ids to withdraw.
+ * @returns the number of handles that closed without throwing.
+ */
+export function closeNotifications(api: typeof Notification | undefined, ids: readonly string[]): number {
+  let closed = 0
+  for (const id of ids) {
+    const handle = restoreNotification(api, id)
+    if (handle === undefined) continue
+    try {
+      handle.close()
+      closed += 1
+    } catch {
+      // A browser that refuses to close one entry must not block the others.
+    }
+  }
+  return closed
 }
 
 /** The surface this code may show notifications on (absent in insecure contexts). */

@@ -21,6 +21,7 @@ export function defaultNotificationSettings(): NotificationSettings {
     rules: [],
     requireInteraction: false,
     backgroundOnly: true,
+    clearOnLock: true,
   }
 }
 

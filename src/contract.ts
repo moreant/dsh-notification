@@ -75,6 +75,16 @@ export interface NotificationSettings {
   readonly requireInteraction: boolean
   /** When true, only notify while the page is hidden (the tab is not focused). */
   readonly backgroundOnly: boolean
+  /**
+   * When true, notifications are withdrawn before the screen suspends or the
+   * login session ends (page hidden, lock, sleep, sign-out, shutdown), so
+   * Notification Center neither replays them on wake nor re-posts them in a
+   * batch seconds after the next login. The one exception: with
+   * `notifyCompleted` also on, the last notification of a batch is kept
+   * visible when the screen merely goes to sleep, because waking to the
+   * completion is the reason it was sent.
+   */
+  readonly clearOnLock: boolean
 }
 
 /** The projection key this plugin owns. */

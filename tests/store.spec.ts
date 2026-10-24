@@ -29,6 +29,7 @@ describe('defaultNotificationSettings', () => {
       rules: [],
       requireInteraction: false,
       backgroundOnly: true,
+      clearOnLock: true,
     })
   })
 })
