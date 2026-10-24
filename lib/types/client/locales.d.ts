@@ -52,6 +52,8 @@ export declare const zh: {
     'settings.advanced.requireInteractionDesc': string;
     'settings.advanced.backgroundOnly': string;
     'settings.advanced.backgroundOnlyDesc': string;
+    'settings.advanced.clearOnLock': string;
+    'settings.advanced.clearOnLockDesc': string;
     'notify.titleCompleted': string;
     'notify.titleError': string;
     'notify.titleAborted': string;
@@ -117,6 +119,8 @@ export declare const en: {
     'settings.advanced.requireInteractionDesc': string;
     'settings.advanced.backgroundOnly': string;
     'settings.advanced.backgroundOnlyDesc': string;
+    'settings.advanced.clearOnLock': string;
+    'settings.advanced.clearOnLockDesc': string;
     'notify.titleCompleted': string;
     'notify.titleError': string;
     'notify.titleAborted': string;

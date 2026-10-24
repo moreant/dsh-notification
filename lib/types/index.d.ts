@@ -6,7 +6,6 @@
  * Notification call all live in the client half (`./client`).
  */
 import type { Context } from '@deepseek-ai/cordis';
-import z from '@deepseek-ai/schemastery';
 /** Cordis plugin name (the Loader entry and client bundle id). */
 export declare const name = "dsh-notification";
 /** Services required before load: the projection registry. */
@@ -21,11 +20,7 @@ export interface Config {
  * The inferred schema type keeps the callable form accepting partial input, so
  * `Config({})` yields the defaults (what the Loader does for compositions).
  */
-export declare const Config: z<Schemastery.ObjectS<{
-    maxBodyChars: z<number, number>;
-}>, Schemastery.ObjectT<{
-    maxBodyChars: z<number, number>;
-}>>;
+export declare const Config: any;
 /**
  * Register the `notification` projection unit; the registration is an effect
  * on this plugin's fiber, so unloading removes the key.
