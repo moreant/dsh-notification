@@ -349,6 +349,12 @@ export function NotificationSettingsSection({ useSettings, set, requestPermissio
           desc={t('settings.advanced.backgroundOnlyDesc')}
           onChange={(checked) => { set({ backgroundOnly: checked }) }}
         />
+        <Toggle
+          defaultChecked={settings?.clearOnLock ?? true}
+          label={t('settings.advanced.clearOnLock')}
+          desc={t('settings.advanced.clearOnLockDesc')}
+          onChange={(checked) => { set({ clearOnLock: checked }) }}
+        />
       </div>
     </section>
   )

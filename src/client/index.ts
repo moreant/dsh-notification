@@ -18,17 +18,50 @@ import { NotificationSettingsSection, type NotificationSectionInjected } from '.
 import { NS, en, zh } from './locales.ts'
 import { adoptStyles } from './styles.ts'
 import { createNotificationSettingsStore } from './store.ts'
-import { notificationFor, pendingAdvance, pendingNotificationFor, projectionAdvance } from './runner.ts'
+import { createLedger, type Ledger } from './ledger.ts'
+import {
+  notificationFor,
+  pendingAdvance,
+  pendingNotificationFor,
+  projectionAdvance,
+  staleAll,
+  staleExceptNewestCompletion,
+  type StaleEntry,
+} from './runner.ts'
 import { pendingKindOf, viewedSession, type SessionListFacts, type SessionRowFacts, type UiSessionFacts } from './session-facts.ts'
 import {
   bodyText,
+  closeNotifications,
   createBrowserNotification,
+  notificationId,
   notificationsApi,
   pendingTitleKey,
   shouldShow,
   titleKey,
   type NotificationCreationResult,
 } from './notifier.ts'
+
+/**
+ * The ledger storage key: which notifications were delivered and whether they
+ * were withdrawn (`shown` on screen, `alive` left behind by a page that went
+ * away, `closed` already withdrawn).
+ */
+const LEDGER_KEY = 'dsh-notification.delivered'
+
+/**
+ * The desktop power service, when the shell provides one. Declared here rather
+ * than imported so a stock web build type-checks without the desktop package;
+ * the runtime check keeps the fallback to `beforeunload` for plain browsers.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var crucible: { readonly power?: PowerFace } | undefined
+}
+
+/** The subset of `crucible.power` this plugin reads. */
+interface PowerFace {
+  on(event: 'beforeunload' | 'lock-screen' | 'suspend', listener: () => void): () => void
+}
 
 /** Required services: the session list, slots, and locale. */
 export const inject = ['sessions', 'slots', 'locale']
@@ -118,17 +151,85 @@ export function apply(ctx: ClientContext): void {
   const requestPermission = (): Promise<NotificationPermission> =>
     notificationsApi()?.requestPermission() ?? Promise.resolve<NotificationPermission>('denied')
 
+  // Every notification this page hands to the system is recorded in a ledger so
+  // it can be withdrawn again: Chromium leaves a web notification in
+  // Notification Center until it is closed, and macOS re-posts whatever is still
+  // there on wake or a few seconds after the next login — the batch of stale
+  // toasts. `pagehide` (covers close, navigation and sign-out) and the power
+  // hooks below withdraw them before that can happen.
+  const ledger: Ledger = createLedger(typeof localStorage === 'undefined' ? undefined : localStorage, LEDGER_KEY)
+  let sequence = 0
   const show = (title: string, body: string, tag: string, requireInteraction: boolean): NotificationCreationResult => {
     const result = createBrowserNotification(notificationsApi(), title, { body, tag, requireInteraction })
     if (!result.ok) {
       console.error(`[dsh-notification] notification creation failed: ${result.message}`)
       return result
     }
-    result.notification.onclick = () => { window.focus() }
+    const id = notificationId(tag, ++sequence)
+    ledger.show(id)
+    result.notification.onclick = () => {
+      ledger.close(id)
+      window.focus()
+    }
     result.notification.onerror = () => {
       console.error('[dsh-notification] the browser reported a notification delivery error')
     }
     return result
+  }
+
+  /** Withdraw the recorded notifications selected by one trigger. */
+  const withdraw = (label: string, select: (live: readonly string[]) => StaleEntry[]): void => {
+    const live = ledger.survivors().live
+    if (live.length === 0) return
+    const entries = select(live)
+    const closed = closeNotifications(notificationsApi(), entries.map(entry => entry.id))
+    ledger.closeState(entries.map(entry => entry.id))
+    console.info(`[dsh-notification] ${label}: withdrew ${closed}/${entries.length} notification(s)`)
+  }
+
+  // Restore on load: whatever a previous page parse left in the ledger was
+  // probably still in Notification Center. The next batch then writes over it
+  // with the same tags, so the system never accumulates a backlog.
+  const staleOnLoad = ledger.survivors().live
+  if (staleOnLoad.length > 0) withdraw('restore', staleAll)
+  ledger.prune(ledger.survivors().live)
+
+  // Anchored to the page document: AppleScript probes the page for a login
+  // button before it probes DSH's own macOS permission dialog, and the probe
+  // is the wake-up that replays the old notifications.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') withdraw('visibility', staleAll)
+    })
+    window.addEventListener('pagehide', () => { withdraw('pagehide', staleAll) })
+  }
+
+  // Power hooks, gated by the setting (and the master switch):
+  // - `beforeunload` is the last synchronous chance before logout/shutdown, and
+  //   only fires once the page has received input (Chrome's activation rule);
+  // - `lock-screen` withdraws everything (the screen is off — a soft lock kept
+  //   the newest notification there and it must not survive into a lock and come
+  //   back on unlock; a lock that turns into sleep simply keeps the newest);
+  // - `suspend` keeps the newest completion: waking to "the task finished" is
+  //   the reason it was sent.
+  const shouldClear = (): boolean => {
+    const current = settings.getSnapshot()
+    return current.enabled && current.clearOnLock
+  }
+  // The desktop power service is optional: a stock web client has no
+  // `crucible.power`, and `beforeunload` then remains the only hook.
+  const power = globalThis.crucible?.power
+  if (power !== undefined) {
+    const offUnload = power.on('beforeunload', () => {
+      if (!shouldClear()) return
+      withdraw('beforeunload', staleAll)
+    })
+    const offLock = power.on('lock-screen', () => { withdraw('lock-screen', staleAll) })
+    const offSuspend = power.on('suspend', () => {
+      if (!shouldClear()) return
+      withdraw('suspend', staleExceptNewestCompletion)
+    })
+    ctx.effect(() => () => { offUnload(); offLock(); offSuspend() }, 'dsh-notification: power hooks')
   }
   const sendTest = (): NotificationCreationResult => {
     // A unique tag per click: the browser replaces same-tag notifications, and a

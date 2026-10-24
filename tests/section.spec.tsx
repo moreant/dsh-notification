@@ -31,6 +31,7 @@ function fullSettings(overrides: Partial<NotificationSettings> = {}): Notificati
     rules: [],
     requireInteraction: false,
     backgroundOnly: true,
+    clearOnLock: true,
     ...overrides,
   }
 }
