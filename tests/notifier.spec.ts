@@ -4,12 +4,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  COMPLETION_TAG,
+  COMPLETION_TAG_PREFIX,
   bodyText,
   closeNotifications,
   createBrowserNotification,
   idTag,
+  isCompletionTag,
   notificationId,
+  notificationTag,
   pendingNotificationTag,
   pendingTitleKey,
   restoreNotification,
@@ -56,17 +58,30 @@ describe('shouldShow', () => {
   })
 })
 
-describe('COMPLETION_TAG', () => {
-  it('is one slot shared by every completion so entries replace instead of stacking', () => {
-    expect(COMPLETION_TAG).toBe('dsh-notification-completion')
+describe('notificationTag', () => {
+  it('mints a distinct tag per turn so a later completion is not a silent replacement', () => {
+    expect(COMPLETION_TAG_PREFIX).toBe('dsh-notification-completion')
+    expect(notificationTag('s1', 1)).toBe('dsh-notification-completion-s1-1')
+    expect(notificationTag('s1', 1)).not.toBe(notificationTag('s1', 2))
+    expect(notificationTag('s1', 1)).not.toBe(notificationTag('s2', 1))
+  })
+})
+
+describe('isCompletionTag', () => {
+  it('recognizes completion tags and nothing else', () => {
+    expect(isCompletionTag(notificationTag('s1', 3))).toBe(true)
+    expect(isCompletionTag('dsh-notification-pending-s1-1')).toBe(false)
+    expect(isCompletionTag('dsh-notification-test-1700000000000')).toBe(false)
+    expect(isCompletionTag('dsh-notification-completion')).toBe(false)
   })
 })
 
 describe('notificationId / idTag', () => {
-  it('round-trips a tag that itself contains no separator', () => {
-    const id = notificationId(COMPLETION_TAG, 7)
-    expect(id).toBe('dsh-notification-completion#7')
-    expect(idTag(id)).toBe(COMPLETION_TAG)
+  it('round-trips a per-turn completion tag', () => {
+    const completion = notificationTag('s1', 7)
+    const id = notificationId(completion, 7)
+    expect(id).toBe('dsh-notification-completion-s1-7#7')
+    expect(idTag(id)).toBe(completion)
   })
 
   it('keeps a per-interaction tag intact', () => {

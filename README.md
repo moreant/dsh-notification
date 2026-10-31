@@ -14,12 +14,14 @@ client: session list completion reminder (live, dedup) + persisted settings
 ## Install
 
 ```sh
-dsh plugin --profile web add https://github.com/moreant/dsh-notification/archive/refs/tags/v0.1.6.tar.gz
+dsh plugin --profile web add https://github.com/moreant/dsh-notification/archive/refs/tags/v0.1.7.tar.gz
 ```
 
 Restart the web server so the host half and the served client bundle pick up the plugin. The default `dsh web` profile has the required client composition (the session list, the settings shell, and locale).
 
-`0.1.6` fixes the batch replay of stale notifications after login or display wake: every completion shares one tag (Notification Center keeps only the newest), each delivery is recorded, and the record is withdrawn on page hide, lock, sleep, sign-out, shutdown, and the next page load.
+`0.1.7` restores the alert for every completion: `0.1.6` gave every completion one shared tag, and Chromium (macOS in particular) treats a later same-tag notification as a **silent replacement** — the entry in Notification Center is rewritten in place, with no banner and no sound (`renotify` is ignored on macOS), which reads as notifications arriving late or not at all. Each completion now carries its own tag (the system treats it as new and alerts), and the plugin withdraws the previous completion from its delivery ledger right before showing the next one, so Notification Center still keeps a single entry.
+
+`0.1.6` fixes the batch replay of stale notifications after login or display wake: each delivery is recorded and the record is withdrawn on page hide, lock, sleep, sign-out, shutdown, and the next page load.
 
 Version `0.1.5` supports both the 0.1.x and 0.2.x Harness client layouts and projection contracts: waiting interactions are read from `uiSession.sessionStatus` on 0.2.x (falling back to the 0.1.2 `pendingInteractions` observable and the 0.1.1 list row), and the "in view" gate uses the list snapshot's `current` on 0.1.x or the row's `retainedBy.mainView` retention on 0.2.x.
 
@@ -35,12 +37,12 @@ The settings section lives under **Settings > Notifications**.
 | Notify on completed / error / aborted / blocked / token limit | completed + error on, rest off | Which turn-end reasons notify (the host projection reports the reason). |
 | Keyword rules | none | Include/exclude filters matched against the session title, the turn's reply text, and its tool names. Include rules: at least one must match. Exclude rules: a match suppresses. Rules support literal or regex matching with an optional case-sensitive flag. |
 | Require manual dismiss | off | The notification stays until dismissed. |
-| Only notify when the task is out of view | on | Suppress a notification only when its session is currently in view. A completion still notifies while the page is hidden or while another session/workspace is open. Turn it off to notify even for the session being watched. Notifications for the same session replace each other. |
+| Only notify when the task is out of view | on | Suppress a notification only when its session is currently in view. A completion still notifies while the page is hidden or while another session/workspace is open. Turn it off to notify even for the session being watched. Completions always keep a single entry. |
 | Clear notifications before lock or sleep | on | Withdraw delivered notifications when the page hides, the screen locks, the display sleeps, the user signs out, or the machine shuts down, so macOS does not replay the stale ones on wake or in a batch seconds after the next login. A display-only sleep keeps the newest completion for reading on wake; a manual lock withdraws everything (DSH re-arms interactions that still wait). |
 
 Preferences persist in the browser (localStorage). The section also grants browser permission and sends a test notification.
 
-Every completion shares one notification tag, so Notification Center keeps only the newest instead of a growing timeline; each delivery is recorded in a local ledger (`dsh-notification.delivered`) and withdrawn at the moments above or on the next page load.
+Every completion carries its own notification tag (a later same-tag notification would be replaced silently and never alert), and the previous completion is withdrawn right before the next one is shown — so Notification Center still keeps a single entry instead of a growing timeline; each delivery is recorded in a local ledger (`dsh-notification.delivered`) and withdrawn at the moments above or on the next page load.
 
 ## Configuration
 

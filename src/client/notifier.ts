@@ -49,14 +49,41 @@ export function shouldShow(
 }
 
 /**
- * The tag: one notification slot shared by every completion, because the user
- * reads "the task finished", not a timeline. Reusing the tag makes the browser
- * replace the previous completion instead of stacking a second entry in
- * Notification Center — the stacking is what turns one wake-up into a batch of
- * stale toasts. Pending interactions keep their own per-interaction tags: each
- * one waits for a different answer and must stay visible.
+ * The tag prefix every completion notification is minted under.
+ *
+ * Each completion gets its OWN tag. A reused tag is not a cosmetic choice: the
+ * Notifications spec replaces an existing same-tag entry and only re-runs the
+ * alert steps when `renotify` is set, and macOS ignores `renotify` outright
+ * (Chromium issue 40825295), so a shared tag makes every completion after the
+ * first one land silently — the entry is rewritten in place, no banner and no
+ * sound. A fresh tag is the only reliable way to actually alert again.
+ *
+ * "Notification Center keeps a single completion" is preserved by the ledger
+ * instead of by tag reuse: the runner closes the previous completion right
+ * before it shows the next one. Pending interactions keep their own
+ * per-interaction tags: each one waits for a different answer and must stay
+ * visible.
  */
-export const COMPLETION_TAG = 'dsh-notification-completion'
+export const COMPLETION_TAG_PREFIX = 'dsh-notification-completion'
+
+/**
+ * The tag for one completed turn: unique per session and turn, so the system
+ * treats it as a new notification instead of a silent replacement.
+ * @param sessionId - the session that finished the turn.
+ * @param turn - the completed turn number.
+ */
+export function notificationTag(sessionId: string, turn: number): string {
+  return `${COMPLETION_TAG_PREFIX}-${sessionId}-${turn}`
+}
+
+/**
+ * Whether a tag was minted by this plugin for a completion notification (as
+ * opposed to a pending interaction or the test notification).
+ * @param tag - a tag recovered from a ledger id.
+ */
+export function isCompletionTag(tag: string): boolean {
+  return tag.startsWith(`${COMPLETION_TAG_PREFIX}-`)
+}
 
 /**
  * The stable id one constructed notification is tracked under (the ledger key).

@@ -20,6 +20,7 @@ import { adoptStyles } from './styles.ts'
 import { createNotificationSettingsStore } from './store.ts'
 import { createLedger, type Ledger } from './ledger.ts'
 import {
+  completionEntries,
   notificationFor,
   pendingAdvance,
   pendingNotificationFor,
@@ -274,6 +275,12 @@ export function apply(ctx: ClientContext): void {
           + ` hidden=${document.hidden} viewed=${String(viewed)})`,
         )
         if (showIt) {
+          // One completion slot: withdraw the previous completion first. Every
+          // completion carries its own tag — a reused tag is replaced silently
+          // by the browser (and macOS ignores `renotify`), so tag reuse would
+          // trade "one entry" for "no banner after the first one". The ledger
+          // sweep gives the single-slot behavior without losing the alert.
+          withdraw('completion-replace', completionEntries)
           show(
             t(titleKey(plan.reason)),
             bodyText(plan.body, t('notify.emptyBody')),
